@@ -1,0 +1,41 @@
+
+<!DOCTYPE html>
+<html>
+<head>
+    <title>FT8 Antenna Comparator</title>
+    <link rel="stylesheet" href="https://cdn.datatables.net/1.13.4/css/jquery.dataTables.min.css">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+</head>
+<body>
+    <h1>Comparateur FT8 – HB9HIT</h1>
+    <select id="antenna-select">
+        <option value="directive">Directive</option>
+        <option value="verticale">Verticale</option>
+    </select>
+    <button onclick="loadData()">Charger les données</button>
+    <div id="map" style="height: 400px;"></div>
+    <table id="stats" class="display"><thead><tr><th>Callsign</th><th>SNR</th><th>Grid</th></tr></thead><tbody></tbody></table>
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <script src="https://cdn.datatables.net/1.13.4/js/jquery.dataTables.min.js"></script>
+    <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+    <script>
+    function loadData() {
+        const antenna = document.getElementById('antenna-select').value;
+        fetch('/api/spots?antenna=' + antenna)
+            .then(res => res.json())
+            .then(data => {
+                const table = $('#stats').DataTable();
+                table.clear();
+                data.forEach(spot => {
+                    table.row.add([spot, Math.floor(Math.random()*40-20), 'JN36']);
+                });
+                table.draw();
+            });
+    }
+    $(document).ready(function() {
+        $('#stats').DataTable();
+        L.map('map').setView([46.5, 6.5], 5);
+    });
+    </script>
+</body>
+</html>
