@@ -1,0 +1,25 @@
+package ch.hb9hit.pskreporter.model;
+
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import com.fasterxml.jackson.dataformat.xml.annotation.JacksonXmlElementWrapper;
+import com.fasterxml.jackson.dataformat.xml.annotation.JacksonXmlProperty;
+import com.fasterxml.jackson.dataformat.xml.annotation.JacksonXmlRootElement;
+
+import java.util.List;
+
+@JacksonXmlRootElement(localName = "receptionReports")
+@JsonIgnoreProperties(ignoreUnknown = true)
+public class ReceptionReports {
+
+    @JacksonXmlProperty(localName = "receptionReport")
+    @JacksonXmlElementWrapper(useWrapping = false)
+    private List<Spot> receptionReports;
+
+    public List<Spot> getReceptionReports() {
+        return receptionReports;
+    }
+
+    public void setReceptionReports(List<Spot> receptionReports) {
+        this.receptionReports = receptionReports;
+    }
+}

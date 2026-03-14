@@ -1,41 +1,227 @@
-
 <!DOCTYPE html>
-<html>
+<html lang="fr">
 <head>
-    <title>FT8 Antenna Comparator</title>
+    <meta charset="UTF-8">
+    <title>FT8 Antenna Comparator - HB9HIT</title>
     <link rel="stylesheet" href="https://cdn.datatables.net/1.13.4/css/jquery.dataTables.min.css">
     <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+    <style>
+        body { font-family: sans-serif; margin: 20px; }
+        .controls { margin-bottom: 20px; padding: 15px; background: #f0f0f0; border-radius: 8px; }
+        .controls input, .controls select, .controls button { padding: 8px; margin-right: 10px; }
+        #map { height: 500px; margin-bottom: 20px; border-radius: 8px; }
+        .summary { margin-bottom: 20px; }
+        .summary table { border-collapse: collapse; width: 100%; }
+        .summary th, .summary td { border: 1px solid #ddd; padding: 10px; text-align: left; }
+        .summary th { background-color: #f4f4f4; }
+        .instructions { background: #e7f3fe; padding: 15px; border-left: 6px solid #2196F3; margin-bottom: 20px; }
+    </style>
 </head>
 <body>
-    <h1>Comparateur FT8 – HB9HIT</h1>
-    <select id="antenna-select">
-        <option value="directive">Directive</option>
-        <option value="verticale">Verticale</option>
-    </select>
-    <button onclick="loadData()">Charger les données</button>
-    <div id="map" style="height: 400px;"></div>
-    <table id="stats" class="display"><thead><tr><th>Callsign</th><th>SNR</th><th>Grid</th></tr></thead><tbody></tbody></table>
+    <h1>Comparateur d'Antennes FT8 – HB9HIT</h1>
+
+    <div class="instructions">
+        <h3>Comment utiliser cet outil ?</h3>
+        <p>Cet outil permet aux radioamateurs de comparer les performances de deux ou plusieurs antennes en utilisant les rapports de réception (spots) de PSK Reporter.</p>
+        <ol>
+            <li>Entrez votre <strong>Indicatif de réception</strong> (ex: HB9HIT).</li>
+            <li>Connectez votre première antenne, attendez quelques minutes de décodage FT8, puis entrez le nom de l'antenne (ex: "Verticale") et cliquez sur <strong>Récupérer les données</strong>.</li>
+            <li>Basculez sur votre deuxième antenne, attendez à nouveau quelques minutes, changez le nom de l'antenne (ex: "Directive") et cliquez sur <strong>Récupérer les données</strong>.</li>
+            <li>Analysez les différences de SNR moyen et de nombre de spots dans le tableau récapitulatif.</li>
+        </ol>
+        <p><em>Note : Les données sont accumulées dans la session. Utilisez "Effacer l'historique" pour recommencer.</em></p>
+    </div>
+
+    <div class="controls">
+        <label for="callsign">Mon Indicatif (Receiver):</label>
+        <input type="text" id="callsign" placeholder="ex: HB9HIT" value="HB9HIT">
+
+        <label for="antenna-name">Nom de l'Antenne:</label>
+        <input type="text" id="antenna-name" placeholder="ex: Verticale">
+
+        <button onclick="fetchData()" id="fetch-btn">Récupérer les données</button>
+        <button onclick="clearData()" style="background-color: #ffcccb;">Effacer l'historique</button>
+    </div>
+
+    <div class="summary">
+        <h3>Résumé de la Comparaison</h3>
+        <table id="summary-table">
+            <thead>
+                <tr>
+                    <th>Antenne</th>
+                    <th>Nombre de Spots</th>
+                    <th>SNR Moyen (dB)</th>
+                    <th>SNR Max (dB)</th>
+                </tr>
+            </thead>
+            <tbody id="summary-body">
+                <!-- Rempli par JS -->
+            </tbody>
+        </table>
+    </div>
+
+    <div id="map"></div>
+
+    <h3>Détails des Spots</h3>
+    <table id="stats-table" class="display">
+        <thead>
+            <tr>
+                <th>Antenne</th>
+                <th>Emetteur</th>
+                <th>SNR (dB)</th>
+                <th>Mode</th>
+                <th>Fréquence (Hz)</th>
+                <th>Locator</th>
+            </tr>
+        </thead>
+        <tbody></tbody>
+    </table>
+
     <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
     <script src="https://cdn.datatables.net/1.13.4/js/jquery.dataTables.min.js"></script>
     <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
     <script>
-    function loadData() {
-        const antenna = document.getElementById('antenna-select').value;
-        fetch('/api/spots?antenna=' + antenna)
-            .then(res => res.json())
-            .then(data => {
-                const table = $('#stats').DataTable();
-                table.clear();
-                data.forEach(spot => {
-                    table.row.add([spot, Math.floor(Math.random()*40-20), 'JN36']);
-                });
-                table.draw();
+        let map;
+        let markers = [];
+        let dataTable;
+
+        $(document).ready(function() {
+            dataTable = $('#stats-table').DataTable({
+                order: [[2, 'desc']]
             });
-    }
-    $(document).ready(function() {
-        $('#stats').DataTable();
-        L.map('map').setView([46.5, 6.5], 5);
-    });
+            initMap();
+            refreshView();
+        });
+
+        function initMap() {
+            map = L.map('map').setView([46.8, 8.2], 4); // Centré sur la Suisse par défaut
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                attribution: '© OpenStreetMap contributors'
+            }).addTo(map);
+        }
+
+        function fetchData() {
+            const callsign = $('#callsign').val();
+            const antenna = $('#antenna-name').val();
+            if (!callsign || !antenna) {
+                alert("Veuillez remplir l'indicatif et le nom de l'antenne.");
+                return;
+            }
+
+            $('#fetch-btn').prop('disabled', true).text('Chargement...');
+
+            $.post(`/api/spots/fetch?callsign=${callsign}&antenna=${antenna}`)
+                .done(() => {
+                    refreshView();
+                })
+                .fail((err) => {
+                    alert("Erreur lors de la récupération des données.");
+                    console.error(err);
+                })
+                .always(() => {
+                    $('#fetch-btn').prop('disabled', false).text('Récupérer les données');
+                });
+        }
+
+        function clearData() {
+            if (confirm("Effacer tout l'historique ?")) {
+                $.ajax({
+                    url: '/api/spots',
+                    type: 'DELETE',
+                    success: function() {
+                        refreshView();
+                    }
+                });
+            }
+        }
+
+        function refreshView() {
+            $.get('/api/spots', function(spots) {
+                updateTable(spots);
+                updateSummary(spots);
+                updateMap(spots);
+            });
+        }
+
+        function updateTable(spots) {
+            dataTable.clear();
+            spots.forEach(spot => {
+                dataTable.row.add([
+                    spot.antennaName,
+                    spot.senderCallsign,
+                    spot.snr,
+                    spot.mode,
+                    spot.frequency,
+                    spot.senderLocator
+                ]);
+            });
+            dataTable.draw();
+        }
+
+        function updateSummary(spots) {
+            const summary = {};
+            spots.forEach(spot => {
+                if (!summary[spot.antennaName]) {
+                    summary[spot.antennaName] = { count: 0, sumSnr: 0, maxSnr: -99 };
+                }
+                summary[spot.antennaName].count++;
+                summary[spot.antennaName].sumSnr += spot.snr;
+                if (spot.snr > summary[spot.antennaName].maxSnr) {
+                    summary[spot.antennaName].maxSnr = spot.snr;
+                }
+            });
+
+            const tbody = $('#summary-body');
+            tbody.empty();
+            for (const ant in summary) {
+                const avg = (summary[ant].sumSnr / summary[ant].count).toFixed(1);
+                tbody.append(`
+                    <tr>
+                        <td><strong>${ant}</strong></td>
+                        <td>${summary[ant].count}</td>
+                        <td>${avg} dB</td>
+                        <td>${summary[ant].maxSnr} dB</td>
+                    </tr>
+                `);
+            }
+        }
+
+        function updateMap(spots) {
+            markers.forEach(m => map.removeLayer(m));
+            markers = [];
+
+            // Pour ne pas surcharger la carte, on peut limiter ou regrouper
+            // Ici on affiche les 100 derniers spots
+            spots.slice(-100).forEach(spot => {
+                if (spot.senderLocator) {
+                    const latlng = decodeLocator(spot.senderLocator);
+                    if (latlng) {
+                        const marker = L.circleMarker(latlng, {
+                            radius: 5,
+                            color: spot.antennaName === $('#antenna-name').val() ? 'red' : 'blue',
+                            fillOpacity: 0.6
+                        }).addTo(map)
+                          .bindPopup(`<b>${spot.senderCallsign}</b><br>SNR: ${spot.snr} dB<br>Antenne: ${spot.antennaName}`);
+                        markers.push(marker);
+                    }
+                }
+            });
+        }
+
+        // Fonction simplifiée pour décoder le Maidenhead Locator
+        function decodeLocator(loc) {
+            if (!loc || loc.length < 4) return null;
+            loc = loc.toUpperCase();
+            let lon = (loc.charCodeAt(0) - 65) * 20 - 180;
+            let lat = (loc.charCodeAt(1) - 65) * 10 - 90;
+            lon += (loc.charCodeAt(2) - 48) * 2;
+            lat += (loc.charCodeAt(3) - 48) * 1;
+            if (loc.length >= 6) {
+                lon += (loc.charCodeAt(4) - 65) * 5 / 60;
+                lat += (loc.charCodeAt(5) - 65) * 2.5 / 60;
+            }
+            return [lat + 0.5/60, lon + 1/60]; // Centre approximatif
+        }
     </script>
 </body>
 </html>
