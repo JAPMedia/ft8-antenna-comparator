@@ -30,6 +30,9 @@ public class Spot {
     private long timestamp;
 
     private String antennaName;
+    private double distance;
+    private Double senderLatitude;
+    private Double senderLongitude;
 
     // Default constructor for Jackson
     public Spot() {}
@@ -60,4 +63,13 @@ public class Spot {
 
     public String getAntennaName() { return antennaName; }
     public void setAntennaName(String antennaName) { this.antennaName = antennaName; }
+
+    public double getDistance() { return distance; }
+    public void setDistance(double distance) { this.distance = distance; }
+
+    public Double getSenderLatitude() { return senderLatitude; }
+    public void setSenderLatitude(Double senderLatitude) { this.senderLatitude = senderLatitude; }
+
+    public Double getSenderLongitude() { return senderLongitude; }
+    public void setSenderLongitude(Double senderLongitude) { this.senderLongitude = senderLongitude; }
 }

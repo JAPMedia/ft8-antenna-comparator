@@ -39,8 +39,12 @@
         <label for="antenna-name">Nom de l'Antenne:</label>
         <input type="text" id="antenna-name" placeholder="ex: Verticale">
 
+        <label for="minutes">Minutes:</label>
+        <input type="number" id="minutes" value="60" style="width: 60px;">
+
         <button onclick="fetchData()" id="fetch-btn">Récupérer les données</button>
         <button onclick="clearData()" style="background-color: #ffcccb;">Effacer l'historique</button>
+        <button onclick="exportCSV()">Exporter en CSV</button>
     </div>
 
     <div class="summary">
@@ -52,6 +56,7 @@
                     <th>Nombre de Spots</th>
                     <th>SNR Moyen (dB)</th>
                     <th>SNR Max (dB)</th>
+                    <th>Distance Moyenne (km)</th>
                 </tr>
             </thead>
             <tbody id="summary-body">
@@ -69,6 +74,7 @@
                 <th>Antenne</th>
                 <th>Emetteur</th>
                 <th>SNR (dB)</th>
+                <th>Distance (km)</th>
                 <th>Mode</th>
                 <th>Fréquence (Hz)</th>
                 <th>Locator</th>
@@ -84,6 +90,17 @@
         let map;
         let markers = [];
         let dataTable;
+        const antennaColors = {};
+        const palette = ['#e6194b', '#3cb44b', '#ffe119', '#4363d8', '#f58231', '#911eb4', '#46f0f0', '#f032e6', '#bcf60c', '#fabebe'];
+        let colorIdx = 0;
+
+        function getAntennaColor(name) {
+            if (!antennaColors[name]) {
+                antennaColors[name] = palette[colorIdx % palette.length];
+                colorIdx++;
+            }
+            return antennaColors[name];
+        }
 
         $(document).ready(function() {
             dataTable = $('#stats-table').DataTable({
@@ -103,6 +120,7 @@
         function fetchData() {
             const callsign = $('#callsign').val();
             const antenna = $('#antenna-name').val();
+            const minutes = $('#minutes').val();
             if (!callsign || !antenna) {
                 alert("Veuillez remplir l'indicatif et le nom de l'antenne.");
                 return;
@@ -110,7 +128,7 @@
 
             $('#fetch-btn').prop('disabled', true).text('Chargement...');
 
-            $.post(`/api/spots/fetch?callsign=${callsign}&antenna=${antenna}`)
+            $.post(`/api/spots/fetch?callsign=${callsign}&antenna=${antenna}&minutes=${minutes}`)
                 .done(() => {
                     refreshView();
                 })
@@ -135,12 +153,37 @@
             }
         }
 
+        let currentSpots = [];
+
         function refreshView() {
             $.get('/api/spots', function(spots) {
+                currentSpots = spots;
                 updateTable(spots);
                 updateSummary(spots);
                 updateMap(spots);
             });
+        }
+
+        function exportCSV() {
+            if (currentSpots.length === 0) {
+                alert("Aucune donnée à exporter.");
+                return;
+            }
+
+            let csv = "Antenna,Sender,SNR,Distance,Mode,Frequency,Locator,Timestamp\n";
+            currentSpots.forEach(s => {
+                csv += `${s.antennaName},${s.senderCallsign},${s.snr},${s.distance.toFixed(0)},${s.mode},${s.frequency},${s.senderLocator},${s.timestamp}\n`;
+            });
+
+            const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+            const link = document.createElement("a");
+            const url = URL.createObjectURL(blob);
+            link.setAttribute("href", url);
+            link.setAttribute("download", "ft8_antenna_comparison.csv");
+            link.style.visibility = 'hidden';
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
         }
 
         function updateTable(spots) {
@@ -150,6 +193,7 @@
                     spot.antennaName,
                     spot.senderCallsign,
                     spot.snr,
+                    spot.distance ? spot.distance.toFixed(0) : '-',
                     spot.mode,
                     spot.frequency,
                     spot.senderLocator
@@ -162,10 +206,11 @@
             const summary = {};
             spots.forEach(spot => {
                 if (!summary[spot.antennaName]) {
-                    summary[spot.antennaName] = { count: 0, sumSnr: 0, maxSnr: -99 };
+                    summary[spot.antennaName] = { count: 0, sumSnr: 0, maxSnr: -99, sumDist: 0 };
                 }
                 summary[spot.antennaName].count++;
                 summary[spot.antennaName].sumSnr += spot.snr;
+                summary[spot.antennaName].sumDist += spot.distance;
                 if (spot.snr > summary[spot.antennaName].maxSnr) {
                     summary[spot.antennaName].maxSnr = spot.snr;
                 }
@@ -174,13 +219,16 @@
             const tbody = $('#summary-body');
             tbody.empty();
             for (const ant in summary) {
-                const avg = (summary[ant].sumSnr / summary[ant].count).toFixed(1);
+                const avgSnr = (summary[ant].sumSnr / summary[ant].count).toFixed(1);
+                const avgDist = (summary[ant].sumDist / summary[ant].count).toFixed(0);
+                const color = getAntennaColor(ant);
                 tbody.append(`
                     <tr>
-                        <td><strong>${ant}</strong></td>
+                        <td style="border-left: 10px solid ${color}"><strong>${ant}</strong></td>
                         <td>${summary[ant].count}</td>
-                        <td>${avg} dB</td>
+                        <td>${avgSnr} dB</td>
                         <td>${summary[ant].maxSnr} dB</td>
+                        <td>${avgDist} km</td>
                     </tr>
                 `);
             }
@@ -192,18 +240,22 @@
 
             // Pour ne pas surcharger la carte, on peut limiter ou regrouper
             // Ici on affiche les 100 derniers spots
-            spots.slice(-100).forEach(spot => {
-                if (spot.senderLocator) {
-                    const latlng = decodeLocator(spot.senderLocator);
-                    if (latlng) {
-                        const marker = L.circleMarker(latlng, {
-                            radius: 5,
-                            color: spot.antennaName === $('#antenna-name').val() ? 'red' : 'blue',
-                            fillOpacity: 0.6
-                        }).addTo(map)
-                          .bindPopup(`<b>${spot.senderCallsign}</b><br>SNR: ${spot.snr} dB<br>Antenne: ${spot.antennaName}`);
-                        markers.push(marker);
-                    }
+            spots.slice(-200).forEach(spot => {
+                let latlng;
+                if (spot.senderLatitude && spot.senderLongitude) {
+                    latlng = [spot.senderLatitude, spot.senderLongitude];
+                } else if (spot.senderLocator) {
+                    latlng = decodeLocator(spot.senderLocator);
+                }
+
+                if (latlng) {
+                    const marker = L.circleMarker(latlng, {
+                        radius: 5,
+                        color: getAntennaColor(spot.antennaName),
+                        fillOpacity: 0.6
+                    }).addTo(map)
+                      .bindPopup(`<b>${spot.senderCallsign}</b><br>SNR: ${spot.snr} dB<br>Distance: ${spot.distance.toFixed(0)} km<br>Antenne: ${spot.antennaName}`);
+                    markers.push(marker);
                 }
             });
         }

@@ -19,8 +19,8 @@ public class PskReporterController {
     }
 
     @PostMapping("/fetch")
-    public void fetchSpots(@RequestParam String callsign, @RequestParam String antenna) {
-        pskReporterService.fetchAndStoreSpots(callsign, antenna);
+    public void fetchSpots(@RequestParam String callsign, @RequestParam String antenna, @RequestParam(defaultValue = "60") int minutes) {
+        pskReporterService.fetchAndStoreSpots(callsign, antenna, minutes);
     }
 
     @GetMapping
