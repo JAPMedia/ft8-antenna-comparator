@@ -30,4 +30,23 @@ public class PskReporterServiceTest {
         assertEquals(1773483387L, spot1.getTimestamp());
         assertEquals(14076588L, spot1.getFrequency());
     }
+
+    @Test
+    public void testDistanceCalculation() {
+        PskReporterService service = new PskReporterService();
+
+        double[] coords1 = service.decodeLocator("JN36ET"); // Approx 46.18, 6.14
+        assertNotNull(coords1);
+        assertTrue(coords1[0] > 46 && coords1[0] < 47);
+        assertTrue(coords1[1] > 6 && coords1[1] < 7);
+
+        double[] coords2 = service.decodeLocator("FN20"); // Approx 40.5, -75.0
+        assertNotNull(coords2);
+        assertTrue(coords2[0] > 40 && coords2[0] < 41);
+        assertTrue(coords2[1] > -76 && coords2[1] < -74);
+
+        double dist = service.calculateDistance(coords1[0], coords1[1], coords2[0], coords2[1]);
+        // Distance between Geneva and Philadelphia is roughly 6200km
+        assertTrue(dist > 6000 && dist < 6500);
+    }
 }
